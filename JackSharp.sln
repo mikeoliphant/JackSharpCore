@@ -1,9 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.26430.6
+# Visual Studio Version 18
+VisualStudioVersion = 18.2.11408.102 d18.0
 MinimumVisualStudioVersion = 10.0.40219.1
-#Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jack.CSCoreTest", "Jack.CSCoreTest\Jack.CSCoreTest.csproj", "{942A9172-E950-4699-8336-21549D923488}"
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JackSharp", "JackSharp\JackSharp.csproj", "{4F92C51C-92A4-4B82-A3D9-0F9EBF76ADA7}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JackSharpTest", "JackSharpTest\JackSharpTest.csproj", "{FF26D28D-D7DB-4E19-8713-4E057182DF7B}"
@@ -36,14 +35,6 @@ Global
 		{516BF6A5-5B69-4A24-B709-C8D817D60634}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{516BF6A5-5B69-4A24-B709-C8D817D60634}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{516BF6A5-5B69-4A24-B709-C8D817D60634}.Release|Any CPU.Build.0 = Release|Any CPU
-		#{70F1E304-98E1-4464-BCBA-03BA6E7A3CC5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		#{70F1E304-98E1-4464-BCBA-03BA6E7A3CC5}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		#{70F1E304-98E1-4464-BCBA-03BA6E7A3CC5}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		#{70F1E304-98E1-4464-BCBA-03BA6E7A3CC5}.Release|Any CPU.Build.0 = Release|Any CPU
-		#{942A9172-E950-4699-8336-21549D923488}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		#{942A9172-E950-4699-8336-21549D923488}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		#{942A9172-E950-4699-8336-21549D923488}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		#{942A9172-E950-4699-8336-21549D923488}.Release|Any CPU.Build.0 = Release|Any CPU
 		{8193348F-F238-4351-BCC8-8C9E4699E938}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{8193348F-F238-4351-BCC8-8C9E4699E938}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8193348F-F238-4351-BCC8-8C9E4699E938}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -51,6 +42,9 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8ACD2C56-6F6A-4DDB-ADA3-8560355193BF}
 	EndGlobalSection
 	GlobalSection(MonoDevelopProperties) = preSolution
 		Policies = $0

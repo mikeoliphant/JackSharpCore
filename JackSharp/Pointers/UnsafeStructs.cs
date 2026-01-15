@@ -22,11 +22,13 @@
 // THE SOFTWARE.
 
 using System;
+using System.Runtime.InteropServices;
 
 namespace JackSharp.Pointers
 {
     class UnsafeStructs
     {
+        [StructLayout(LayoutKind.Sequential)]
         internal struct jack_client_t
         {
             public ulong unique_1;
@@ -40,10 +42,12 @@ namespace JackSharp.Pointers
         internal struct jack_port_t
         {
         }
+
+        [StructLayout(LayoutKind.Sequential)]
         internal struct jack_midi_event_t
         {
-            public uint time;
-            public uint size;
+            public UInt32 time;
+            public ulong size;
             public unsafe byte* buffer;
         }
 

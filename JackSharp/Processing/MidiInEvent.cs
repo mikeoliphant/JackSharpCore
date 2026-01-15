@@ -48,7 +48,7 @@ namespace JackSharp.Processing
 		internal unsafe MidiInEvent (UnsafeStructs.jack_midi_event_t inEvent)
 		{
 			Time = (int)inEvent.time;
-			_bytePointer = new StructPointer<byte> ((IntPtr)inEvent.buffer, inEvent.size);
+			_bytePointer = new StructPointer<byte> ((IntPtr)inEvent.buffer, (uint)inEvent.size);
 		}
 	}
 }
