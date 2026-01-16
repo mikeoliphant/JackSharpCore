@@ -43,24 +43,6 @@ namespace JackSharp
 		MidiOutPort[] _midiOutPorts;
 		readonly bool _autoconnect;
 
-		static Processor()
-		{
-			NativeLibrary.SetDllImportResolver(Assembly.GetExecutingAssembly(), DllImportResolver);
-        }
-
-        private static IntPtr DllImportResolver(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
-        {
-            if (libraryName == "libjack")
-            {
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    return NativeLibrary.Load("libjack64", assembly, searchPath);
-                }
-            }
-
-            // Otherwise, fallback to default import resolver.
-            return IntPtr.Zero;
-        }
         /// <summary>
         /// Delegates to be called on the process callback of Jack. Multiple Actions can be added.
         /// </summary>

@@ -20,13 +20,15 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using JackSharp.ApiWrapper;
 using JackSharp.Events;
 using JackSharp.Pointers;
 using JackSharp.Ports;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace JackSharp
 {
@@ -35,7 +37,27 @@ namespace JackSharp
 	/// </summary>
 	public abstract class Client: IDisposable
 	{
-		internal unsafe UnsafeStructs.jack_client_t* JackClient;
+        static Client()
+        {
+            NativeLibrary.SetDllImportResolver(Assembly.GetExecutingAssembly(), DllImportResolver);
+        }
+
+        private static IntPtr DllImportResolver(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
+        {
+            if (libraryName == "libjack")
+            {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    return NativeLibrary.Load("libjack64", assembly, searchPath);
+                }
+            }
+
+            // Otherwise, fallback to default import resolver.
+            return IntPtr.Zero;
+        }
+
+
+        internal unsafe UnsafeStructs.jack_client_t* JackClient;
 
 		/// <summary>
 		/// Gets whether the client is connected to Jack.

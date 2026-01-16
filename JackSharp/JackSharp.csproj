@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<PackageId>JackSharpCore</PackageId>
-		<Version>0.1.3</Version>
+		<Version>0.1.4</Version>
 		<TargetFramework>net8.0</TargetFramework>
 		<RootNamespace>JackSharp</RootNamespace>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
