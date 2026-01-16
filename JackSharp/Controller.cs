@@ -210,11 +210,25 @@ namespace JackSharp
 		}
 
 		/// <summary>
-		/// Disconnect the specified outPort and inPort.
+		/// Connect ports by name
 		/// </summary>
-		/// <param name="outPort">Out port.</param>
-		/// <param name="inPort">In port.</param>
-		public bool Disconnect (PortReference outPort, PortReference inPort)
+		/// <param name="outPortName">Out port name</param>
+		/// <param name="inPortName">In port name</param>
+		/// <returns></returns>
+        public bool Connect(string outPortName, string inPortName)
+        {
+            unsafe
+            {
+                return PortApi.Connect(JackClient, outPortName, inPortName) == 0;
+            }
+        }
+
+        /// <summary>
+        /// Disconnect the specified outPort and inPort.
+        /// </summary>
+        /// <param name="outPort">Out port.</param>
+        /// <param name="inPort">In port.</param>
+        public bool Disconnect (PortReference outPort, PortReference inPort)
 		{
 			unsafe {
 				return PortApi.Disconnect (JackClient, outPort.FullName, inPort.FullName) == 0;
