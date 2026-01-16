@@ -35,7 +35,11 @@ namespace JackSharp.Ports
 		/// <summary>
 		/// MIDI.
 		/// </summary>
-		Midi
+		Midi,
+		/// <summary>
+		/// Unknown type
+		/// </summary>
+		Unknown
 	}
     
 }

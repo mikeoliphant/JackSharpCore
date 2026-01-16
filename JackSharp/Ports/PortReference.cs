@@ -90,7 +90,8 @@ namespace JackSharp.Ports
 			case Constants.JACK_DEFAULT_MIDI_TYPE:
 				return PortType.Midi;
 			}
-			throw new IndexOutOfRangeException ("jack_port_type");
+
+			return PortType.Unknown;
 		}
 
 		static unsafe void ReadJackPortFlags (UnsafeStructs.jack_port_t* portPointer, out Direction direction, out bool isPhysicalPort)
