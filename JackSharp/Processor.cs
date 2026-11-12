@@ -26,6 +26,8 @@ public sealed class Processor : Client
     private long cycles;
     private long processExceptions;
     private volatile Exception? lastProcessException;
+    private volatile int addedLatency = -1;
+    private bool latencyCallbackSet;
 
     public unsafe Processor(string name, ClientOptions? options = null) : base(name, options)
     {
@@ -50,6 +52,73 @@ public sealed class Processor : Client
     public Exception? LastProcessException => lastProcessException;
 
     internal IntPtr HandleForCycle => Handle;
+
+    // ---- Latency ----
+
+    /// <summary>
+    /// The latency the processor adds, in frames, for JACK to report downstream: its outputs' capture latency is its
+    /// inputs' plus this, and its inputs' playback latency is its outputs' plus this, so programs further along can
+    /// compensate. -1 (the default) leaves latency to JACK, which passes it through unchanged. Setting it the first time
+    /// must be before <see cref="Client.Activate"/>; after that it can change at any time.
+    /// </summary>
+    public int AddedLatency
+    {
+        get => addedLatency;
+        set
+        {
+            if (value < -1)
+                throw new ArgumentOutOfRangeException(nameof(value), "Latency is -1 (JACK's) or a number of frames.");
+            if (value >= 0 && !latencyCallbackSet && IsActive)
+                throw new InvalidOperationException("Set AddedLatency before activating: JACK takes a latency callback only then.");
+            addedLatency = value;
+            if (latencyCallbackSet && IsActive)
+                Native.jack_recompute_total_latencies(Handle);
+        }
+    }
+
+    protected override unsafe void OnActivating()
+    {
+        if (addedLatency >= 0 && !latencyCallbackSet)
+        {
+            int result = Native.jack_set_latency_callback(Handle, &OnLatency, CallbackArgument);
+            if (result != 0)
+                throw new JackException($"Couldn't set the latency callback of JACK client '{Name}' (error {result}).");
+            latencyCallbackSet = true;
+        }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static void OnLatency(int mode, IntPtr arg)
+    {
+        if (FromCallbackArgument<Processor>(arg) is not { } processor)
+            return;
+        EnterCallback();
+        try { processor.SetLatencies((LatencyMode)mode); }
+        catch (Exception) { /* Never unwind into libjack. */ }
+        finally { LeaveCallback(); }
+    }
+
+    // JACK asks for the latencies through this processor: each output's capture latency is the inputs' plus what the
+    // processor adds; each input's playback latency is the outputs' plus what it adds.
+    private void SetLatencies(LatencyMode mode)
+    {
+        int added = Math.Max(0, addedLatency);
+        PortSet set = ports;
+        Port[] from = mode == LatencyMode.Capture ? set.InputsArray : set.OutputsArray;
+        Port[] to = mode == LatencyMode.Capture ? set.OutputsArray : set.InputsArray;
+        uint min = 0, max = 0;
+        bool any = false;
+        foreach (Port port in from)
+        {
+            LatencyRange range = port.GetLatency(mode);
+            min = any ? Math.Min(min, range.Min) : range.Min;
+            max = any ? Math.Max(max, range.Max) : range.Max;
+            any = true;
+        }
+        var result = new LatencyRange(min + (uint)added, max + (uint)added);
+        foreach (Port port in to)
+            port.SetLatency(mode, result);
+    }
 
     public IReadOnlyList<AudioPort> AudioInputs => ports.AudioInputs;
     public IReadOnlyList<AudioPort> AudioOutputs => ports.AudioOutputs;
@@ -177,6 +246,8 @@ public sealed class Processor : Client
         }
 
         public Port[] All { get; }
+        public Port[] InputsArray => All.Where(p => p.Direction == Direction.In).ToArray();
+        public Port[] OutputsArray => All.Where(p => p.Direction == Direction.Out).ToArray();
         public AudioPort[] AudioInputArray { get; }
         public AudioPort[] AudioOutputArray { get; }
         public MidiPort[] MidiInputArray { get; }

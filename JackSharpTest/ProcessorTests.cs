@@ -202,6 +202,32 @@ public sealed class ProcessorTests
     }
 
     [Test]
+    public void AddedLatencyIsReportedDownstream()
+    {
+        using var source = new Processor("jacksharp-latency-source");
+        using var effect = new Processor("jacksharp-latency-effect");
+        AudioPort sourceOut = source.RegisterAudioPort("out", Direction.Out);
+        AudioPort effectIn = effect.RegisterAudioPort("in", Direction.In);
+        AudioPort effectOut = effect.RegisterAudioPort("out", Direction.Out);
+        effect.AddedLatency = 64;
+        source.Activate();
+        effect.Activate();
+        sourceOut.ConnectTo(effectIn.FullName);
+        LatencyRange upstream = default;
+        Assert.That(TestServer.WaitFor(() =>
+        {
+            upstream = sourceOut.GetLatency(LatencyMode.Capture);
+            return effectOut.GetLatency(LatencyMode.Capture) == new LatencyRange(upstream.Min + 64, upstream.Max + 64);
+        }), Is.True, $"the effect's output: its input's capture latency ({upstream}) plus 64, not {effectOut.GetLatency(LatencyMode.Capture)}");
+        effect.AddedLatency = 100;
+        Assert.That(TestServer.WaitFor(() => effectOut.GetLatency(LatencyMode.Capture) == new LatencyRange(upstream.Min + 100, upstream.Max + 100)),
+            Is.True, "and follows a change while active");
+        using var late = new Processor("jacksharp-latency-late");
+        late.Activate();
+        Assert.Throws<InvalidOperationException>(() => late.AddedLatency = 10, "the callback can only be set before activating");
+    }
+
+    [Test]
     public void NothingIsAllocatedInACycle()
     {
         using var source = new Processor("jacksharp-alloc-source");
