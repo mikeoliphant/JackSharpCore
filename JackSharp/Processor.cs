@@ -1,276 +1,231 @@
-// Author:
-//	   Thomas Mayer <thomas@residuum.org>
-//
-// Copyright (c) 2016 Thomas Mayer
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using JackSharp.Ports;
-using JackSharp.ApiWrapper;
-using JackSharp.Pointers;
-using JackSharp.Processing;
-using System.Reflection;
 
-namespace JackSharp
+namespace JackSharp;
+
+/// <summary>A process callback: it runs once per cycle on JACK's real-time thread.</summary>
+/// <remarks>It must fill every audio output it owns, and must not block, lock, allocate or wait on I/O: the cycle's
+/// deadline is <see cref="Client.BufferSize"/> frames away. Exceptions are caught and counted
+/// (<see cref="Processor.ProcessExceptions"/>), never passed to JACK.</remarks>
+public delegate void ProcessCallback(ProcessContext context);
+
+/// <summary>
+/// A JACK client with ports and a real-time process callback: an instrument, an effect, a recorder, a player. Being a
+/// <see cref="Client"/>, it can also see and patch the graph, its own ports and everyone else's.
+/// </summary>
+/// <remarks>
+/// Register ports, set <see cref="Process"/>, then <see cref="Client.Activate"/>. Ports can be registered and
+/// unregistered while it's active, and <see cref="Process"/> replaced at any time. Nothing in a cycle allocates:
+/// ports' buffers are read and written in place, as spans.
+/// </remarks>
+public sealed class Processor : Client
 {
-	/// <summary>
-	/// Processor.
-	/// </summary>
-	public sealed class Processor : Client
-	{
-		AudioInPort[] _audioInPorts;
-		AudioOutPort[] _audioOutPorts;
-		MidiInPort[] _midiInPorts;
-		MidiOutPort[] _midiOutPorts;
-		readonly bool _autoconnect;
+    private readonly object portsLock = new();
+    private volatile PortSet ports = PortSet.Empty;
+    private volatile ProcessCallback? process;
+    private long cycles;
+    private long processExceptions;
+    private volatile Exception? lastProcessException;
 
-        /// <summary>
-        /// Delegates to be called on the process callback of Jack. Multiple Actions can be added.
-        /// </summary>
-        public Action<ProcessBuffer> ProcessFunc { get; set; }
+    public unsafe Processor(string name, ClientOptions? options = null) : base(name, options)
+    {
+        int result = Native.jack_set_process_callback(Handle, &OnProcess, CallbackArgument);
+        if (result != 0)
+            throw new JackException($"Couldn't set the process callback of JACK client '{Name}' (error {result}).");
+    }
 
-		/// <summary>
-		/// Initializes a new instance of the <see cref="JackSharp.Processor"/> class.
-		/// </summary>
-		/// <param name="name">Name.</param>
-		/// <param name="audioInPorts">Number of audio in ports.</param>
-		/// <param name="audioOutPorts">Number of audio out ports.</param>
-		/// <param name="midiInPorts">Number of MIDI in ports.</param>
-		/// <param name="midiOutPorts">Number of MIDI out ports.</param>
-		/// <param name="autoconnect">If set to <c>true</c>, autoconnect inlets and outlets to physical ports.</param>
-		public Processor (string name, int audioInPorts = 0, int audioOutPorts = 0, int midiInPorts = 0, int midiOutPorts = 0, bool autoconnect = false) : base (name)
-		{
-			_autoconnect = autoconnect;
-			SetUpPorts (audioInPorts, audioOutPorts, midiInPorts, midiOutPorts);
-			SetUpCallbacks ();
-		}
+    /// <summary>The process callback. Null leaves every output silent.</summary>
+    public ProcessCallback? Process
+    {
+        get => process;
+        set => process = value;
+    }
 
-		/// <summary>
-		/// Releases unmanaged resources and performs other cleanup operations before the <see cref="JackSharp.Processor"/> is
-		/// reclaimed by garbage collection.
-		/// </summary>
-		~Processor ()
-		{
-			Dispose (false);
-		}
+    /// <summary>How many cycles have run since the processor was activated.</summary>
+    public long Cycles => Interlocked.Read(ref cycles);
 
-		/// <summary>
-		/// Releases all resource used by the <see cref="JackSharp.Processor"/> object.
-		/// </summary>
-		/// <remarks>Call <see cref="Dispose"/> when you are finished using the <see cref="JackSharp.Processor"/>. The
-		/// <see cref="Dispose"/> method leaves the <see cref="JackSharp.Processor"/> in an unusable state. After calling
-		/// <see cref="Dispose"/>, you must release all references to the <see cref="JackSharp.Processor"/> so the garbage
-		/// collector can reclaim the memory that the <see cref="JackSharp.Processor"/> was occupying.</remarks>
-		public new void Dispose ()
-		{
-			Dispose (true);
-			GC.SuppressFinalize (this);
-		}
+    /// <summary>How many times <see cref="Process"/> threw; <see cref="LastProcessException"/> is the latest.</summary>
+    public long ProcessExceptions => Interlocked.Read(ref processExceptions);
 
-		void SetUpPorts (int audioInPorts, int audioOutPorts, int midiInPorts, int midiOutPorts)
-		{
-			_audioInPorts = new AudioInPort[audioInPorts];
-			_audioOutPorts = new AudioOutPort[audioOutPorts];
-			_midiInPorts = new MidiInPort[midiInPorts];
-			_midiOutPorts = new MidiOutPort[midiOutPorts];
-		}
+    public Exception? LastProcessException => lastProcessException;
 
-		void SetUpCallbacks ()
-		{
-			_processCallback = OnProcess;
-		}
+    internal IntPtr HandleForCycle => Handle;
 
-		/// <summary>
-		/// Gets the MIDI out ports.
-		/// </summary>
-		/// <value>The MIDI out ports.</value>
-		public IEnumerable<MidiOutPort> MidiOutPorts { get { return _midiOutPorts; } }
+    public IReadOnlyList<AudioPort> AudioInputs => ports.AudioInputs;
+    public IReadOnlyList<AudioPort> AudioOutputs => ports.AudioOutputs;
+    public IReadOnlyList<MidiPort> MidiInputs => ports.MidiInputs;
+    public IReadOnlyList<MidiPort> MidiOutputs => ports.MidiOutputs;
 
-		/// <summary>
-		/// Gets the MIDI in ports.
-		/// </summary>
-		/// <value>The MIDI in ports.</value>
-		public IEnumerable<MidiInPort> MidiInPorts { get { return _midiInPorts; } }
+    // ---- Ports ----
 
-		/// <summary>
-		/// Gets the audio out ports.
-		/// </summary>
-		/// <value>The audio out ports.</value>
-		public IEnumerable<AudioOutPort> AudioOutPorts { get { return _audioOutPorts; } }
+    /// <summary>Registers an audio port, named <c>client:name</c> in the graph.</summary>
+    public AudioPort RegisterAudioPort(string name, Direction direction) =>
+        Register(new AudioPort(this, name, direction), JackConstants.AudioType);
 
-		/// <summary>
-		/// Gets the audio in ports.
-		/// </summary>
-		/// <value>The audio in ports.</value>
-		public IEnumerable<AudioInPort> AudioInPorts { get { return _audioInPorts; } }
+    /// <summary>Registers a MIDI port, named <c>client:name</c> in the graph.</summary>
+    public MidiPort RegisterMidiPort(string name, Direction direction) =>
+        Register(new MidiPort(this, name, direction), JackConstants.MidiType);
 
-		/// <summary>
-		/// Sets the port name format.
-		/// 
-		/// Placeholders for replacement: 
-		/// 	{direction}: will be replaced by "in" or "out".
-		/// 	{type}: will be replaced by "audio" or "midi".
-		/// 	{index}: 1-based index of ports.
-		/// </summary>
-		/// <value>The port name format.</value>
-		public string PortNameFormat { private get; set; }
+    private T Register<T>(T port, string type) where T : Port
+    {
+        lock (portsLock)
+        {
+            int flags = port.Direction == Direction.In ? JackConstants.PortIsInput : JackConstants.PortIsOutput;
+            IntPtr handle = Native.jack_port_register(Handle, port.ShortName, type, new CULong((uint)flags), new CULong(0));
+            if (handle == IntPtr.Zero)
+                throw new JackException($"Couldn't register the JACK port '{Name}:{port.ShortName}' (is the name taken?).");
+            port.Attach(handle);
+            ports = ports.With(port);
+        }
+        return port;
+    }
 
-		Callbacks.JackProcessCallback _processCallback;
+    /// <summary>
+    /// Unregisters a port: it leaves the graph, losing its connections. While the processor is active, this waits for
+    /// any cycle that may still be using the port to finish (at most a couple of cycles), so the process callback can
+    /// never see a port that's gone.
+    /// </summary>
+    public void Unregister(Port port)
+    {
+        if (port.Owner != this)
+            throw new ArgumentException("The port belongs to another processor.", nameof(port));
+        lock (portsLock)
+        {
+            if (port.Handle == IntPtr.Zero)
+                return;
+            ports = ports.Without(port);
+            if (IsActive)
+                WaitForCycles(2);
+            IntPtr handle = port.Detach();
+            Native.jack_port_unregister(Handle, handle);
+        }
+    }
 
-		/// <summary>
-		/// Activates the client and connects to Jack.
-		/// </summary>
-		/// <param name="startServer">If [true], the client will start Jack if it is not running.</param>
-		public new bool Start (bool startServer = false)
-		{
-			if (!base.Start (startServer)) {
-				return false;
-			}
-			if (_autoconnect) {
-				AutoConnectPorts ();
-			}
-			return true;
-		}
+    // Waits until a number of cycles have started since now, or a moment longer than they should take.
+    private void WaitForCycles(int count)
+    {
+        long target = Cycles + count;
+        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(Math.Max(50, 4000.0 * count * BufferSize / Math.Max(1, SampleRate)));
+        while (Cycles < target && DateTime.UtcNow < deadline && IsActive)
+            Thread.Sleep(1);
+    }
 
-		internal override bool Open (bool startServer)
-		{
-			ClientStatus status = BaseOpen (startServer);
-			switch (status) {
-			case ClientStatus.AlreadyThere:
-				return true;
-			case ClientStatus.Failure:
-				return false;
-			case ClientStatus.New:
-				CreatePorts ();
-				WireUpCallbacks ();
-				WireUpBaseCallbacks ();
-				return true;
-			}
-			return false;
-		}
+    protected override void OnClosed()
+    {
+        lock (portsLock)
+        {
+            foreach (Port port in ports.All)
+                port.Detach();
+            ports = PortSet.Empty;
+        }
+    }
 
-		unsafe void WireUpCallbacks ()
-		{
-			ClientCallbackApi.SetProcessCallback (JackClient, _processCallback, IntPtr.Zero);
-		}
+    // ---- The process cycle ----
 
-		int OnProcess (uint nframes, IntPtr arg)
-		{
-			AudioBuffer[] audioInBuffers = _audioInPorts.Select (p => p.GetAudioBuffer (nframes)).ToArray ();
-			AudioBuffer[] audioOutBuffers = _audioOutPorts.Select (p => p.GetAudioBuffer (nframes)).ToArray ();
-			MidiEventCollection<MidiInEvent>[] midiInEvents = _midiInPorts.Select (p => p.GetMidiBuffer (nframes)).ToArray ();
-			MidiEventCollection<MidiOutEvent>[] midiOutEvents = _midiOutPorts.Select (p => p.GetMidiBuffer ()).ToArray ();
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static int OnProcess(uint frames, IntPtr arg)
+    {
+        if (FromCallbackArgument<Processor>(arg) is { } processor)
+            processor.RunCycle((int)frames);
+        return 0;
+    }
 
-			if (ProcessFunc != null) {
-				ProcessFunc (new ProcessBuffer (nframes, audioInBuffers, audioOutBuffers, midiInEvents, midiOutEvents));
-			}
-			foreach (var audioInBuffer in audioInBuffers) {
-				audioInBuffer.CopyToPointer ();
-			}
-			foreach (var audioOutBuffer in audioOutBuffers) {
-				audioOutBuffer.CopyToPointer ();
-			}
-			foreach (MidiEventCollection<MidiOutEvent> midiEvents in midiOutEvents) {
-				midiEvents.WriteToJackMidi (nframes);
-			}
+    private void RunCycle(int frames)
+    {
+        PortSet set = ports;
+        long cycle = Interlocked.Increment(ref cycles);
+        var context = new ProcessContext(this, set, frames, cycle);
+        ProcessCallback? callback = process;
+        if (callback == null)
+            Silence(set, frames);
+        else
+        {
+            try
+            {
+                callback(context);
+            }
+            catch (Exception ex)
+            {
+                lastProcessException = ex;
+                Interlocked.Increment(ref processExceptions);
+                Silence(set, frames);
+            }
+        }
+        // A MIDI output must be cleared every cycle, written or not.
+        foreach (MidiPort port in set.MidiOutputArray)
+            port.ClearIfUnwritten(frames, cycle);
+    }
 
-			return 0;
-		}
+    private static unsafe void Silence(PortSet set, int frames)
+    {
+        foreach (AudioPort port in set.AudioOutputArray)
+            new Span<float>(Native.jack_port_get_buffer(port.Handle, (uint)frames), frames).Clear();
+    }
 
-		/// <summary>
-		/// Stop this instance and disconnects from Jack.
-		/// </summary>
-		public new bool Stop ()
-		{
-			DisposePorts ();
-			return base.Stop ();
-		}
+    /// <summary>The ports a cycle sees: an immutable snapshot, replaced whenever a port is registered or unregistered.</summary>
+    internal sealed class PortSet
+    {
+        public static readonly PortSet Empty = new(Array.Empty<Port>());
 
-		void DisposePorts ()
-		{
-			for (int i = _midiOutPorts.Length - 1; i >= 0; i--) {
-				if (_midiOutPorts [i] != null) {
-					_midiOutPorts [i].Dispose ();
-				}
-			}
-			for (int i = _midiInPorts.Length - 1; i >= 0; i--) {
-				if (_midiInPorts [i] != null) {
-					_midiInPorts [i].Dispose ();
-				}
-			}
-			for (int i = _audioOutPorts.Length - 1; i >= 0; i--) {
-				if (_audioOutPorts [i] != null) {
-					_audioOutPorts [i].Dispose ();
-				}
-			}
-			for (int i = _audioInPorts.Length - 1; i >= 0; i--) {
-				if (_audioInPorts [i] != null) {
-					_audioInPorts [i].Dispose ();
-				}
-			}
-		}
+        public PortSet(Port[] all)
+        {
+            All = all;
+            AudioInputArray = all.OfType<AudioPort>().Where(p => p.Direction == Direction.In).ToArray();
+            AudioOutputArray = all.OfType<AudioPort>().Where(p => p.Direction == Direction.Out).ToArray();
+            MidiInputArray = all.OfType<MidiPort>().Where(p => p.Direction == Direction.In).ToArray();
+            MidiOutputArray = all.OfType<MidiPort>().Where(p => p.Direction == Direction.Out).ToArray();
+        }
 
-		unsafe void CreatePorts ()
-		{
-			for (int i = 0; i < _audioInPorts.Length; i++) {
-				_audioInPorts [i] = new AudioInPort (JackClient, i, PortNameFormat);
-			}
-			for (int i = 0; i < _audioOutPorts.Length; i++) {
-				_audioOutPorts [i] = new AudioOutPort (JackClient, i, PortNameFormat);
-			}
-			for (int i = 0; i < _midiInPorts.Length; i++) {
-				_midiInPorts [i] = new MidiInPort (JackClient, i, PortNameFormat);
-			}
-			for (int i = 0; i < _midiOutPorts.Length; i++) {
-				_midiOutPorts [i] = new MidiOutPort (JackClient, i, PortNameFormat);
-			}
-		}
+        public Port[] All { get; }
+        public AudioPort[] AudioInputArray { get; }
+        public AudioPort[] AudioOutputArray { get; }
+        public MidiPort[] MidiInputArray { get; }
+        public MidiPort[] MidiOutputArray { get; }
+        public IReadOnlyList<AudioPort> AudioInputs => AudioInputArray;
+        public IReadOnlyList<AudioPort> AudioOutputs => AudioOutputArray;
+        public IReadOnlyList<MidiPort> MidiInputs => MidiInputArray;
+        public IReadOnlyList<MidiPort> MidiOutputs => MidiOutputArray;
 
-		unsafe void AutoConnectPorts ()
-		{
-			List<PortReference> ports = GetAllJackPorts ().Where (p => p.IsPhysicalPort).ToList ();
+        public PortSet With(Port port) => new(All.Append(port).ToArray());
 
-			List<string> outlets = ports.Where (p => p.Direction == Direction.Out && p.PortType == PortType.Audio).Select (p => p.FullName).ToList ();
-			List<string> inlets = _audioInPorts.Select (p => PortApi.GetName (p._port).PtrToString ()).ToList ();
-			ConnectPorts (outlets, inlets);
+        public PortSet Without(Port port) => new(All.Where(p => p != port).ToArray());
+    }
+}
 
-			outlets = _audioOutPorts.Select (p => PortApi.GetName (p._port).PtrToString ()).ToList ();
-			inlets = ports.Where (p => p.Direction == Direction.In && p.PortType == PortType.Audio).Select (p => p.FullName).ToList ();
-			ConnectPorts (outlets, inlets);
+/// <summary>
+/// One process cycle: its frame count, and the processor's ports as they were when it began. Valid only during the
+/// callback it's passed to.
+/// </summary>
+public readonly ref struct ProcessContext
+{
+    private readonly Processor.PortSet ports;
 
-			outlets = ports.Where (p => p.Direction == Direction.Out && p.PortType == PortType.Midi).Select (p => p.FullName).ToList ();
-			inlets = _midiInPorts.Select (p => PortApi.GetName (p._port).PtrToString ()).ToList ();
-			ConnectPorts (outlets, inlets);
+    internal ProcessContext(Processor processor, Processor.PortSet ports, int frames, long cycle)
+    {
+        Processor = processor;
+        this.ports = ports;
+        Frames = frames;
+        Cycle = cycle;
+    }
 
-			outlets = _midiOutPorts.Select (p => PortApi.GetName (p._port).PtrToString ()).ToList ();
-			inlets = ports.Where (p => p.Direction == Direction.In && p.PortType == PortType.Midi).Select (p => p.FullName).ToList ();
-			ConnectPorts (outlets, inlets);
-		}
+    public Processor Processor { get; }
 
-		unsafe void ConnectPorts (List<string> outlets, List<string> inlets)
-		{
-			for (int i = 0; i < Math.Min (outlets.Count, inlets.Count); i++) {
-				PortApi.Connect (JackClient, outlets [i], inlets [i]);
-			}
-		}
-	}
+    /// <summary>Frames in this cycle: the length of every audio buffer.</summary>
+    public int Frames { get; }
+
+    /// <summary>This cycle's number, counting from 1 when the processor was first activated.</summary>
+    public long Cycle { get; }
+
+    /// <summary>The frame time at the start of this cycle.</summary>
+    public uint FrameTime => Native.jack_last_frame_time(Processor.HandleForCycle);
+
+    /// <summary>The audio inputs, in the order they were registered.</summary>
+    public ReadOnlySpan<AudioPort> AudioInputs => ports.AudioInputArray;
+
+    /// <summary>The audio outputs, in the order they were registered.</summary>
+    public ReadOnlySpan<AudioPort> AudioOutputs => ports.AudioOutputArray;
+
+    public ReadOnlySpan<MidiPort> MidiInputs => ports.MidiInputArray;
+
+    public ReadOnlySpan<MidiPort> MidiOutputs => ports.MidiOutputArray;
 }

@@ -1,113 +1,89 @@
-// Author:
-//	   Thomas Mayer <thomas@residuum.org>
-//
-// Copyright (c) 2016 Thomas Mayer
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-using System;
-using System.Linq;
 using JackSharp;
-using JackSharp.Ports;
-using JackSharp.Processing;
 using NAudio.Wave;
 
-namespace Jack.NAudio
+namespace Jack.NAudio;
+
+/// <summary>
+/// Records a <see cref="Processor"/>'s audio inputs as NAudio wave data: 32-bit float, interleaved, a channel per input
+/// in the order they were registered.
+/// </summary>
+/// <remarks>
+/// The processor is the caller's: <see cref="StartRecording"/> activates it if it isn't yet, but stopping only stops the
+/// recording. <see cref="DataAvailable"/> is raised on JACK's real-time thread, once per cycle, with the same buffer and
+/// event arguments each time (nothing is allocated): copy the data out and return quickly, or queue it for another
+/// thread.
+/// </remarks>
+public sealed class AudioIn : IWaveIn
 {
-	public sealed class AudioIn : IWaveIn
-	{
-		readonly Processor _client;
-		bool _isRecording;
+    private readonly Processor processor;
+    private readonly ProcessCallback callback;
+    private volatile bool recording;
+    private byte[] bytes = Array.Empty<byte>();
+    private WaveInEventArgs? arguments;
+    private bool disposed;
 
-		public AudioIn (Processor client)
-		{
-			_client = client;
-			_client.ProcessFunc += ProcessAudio;
-		}
+    public AudioIn(Processor processor)
+    {
+        this.processor = processor;
+        callback = Process;
+        processor.Process += callback;
+    }
 
-		~AudioIn ()
-		{
-			Dispose (false);
-		}
+    public WaveFormat WaveFormat
+    {
+        get => WaveFormat.CreateIeeeFloatWaveFormat(processor.SampleRate, processor.AudioInputs.Count);
+        set => throw new NotSupportedException("JACK records 32-bit float at the server's rate, a channel per input.");
+    }
 
-		public void Dispose ()
-		{
-			Dispose (true);
-			GC.SuppressFinalize (this);
-		}
+    public event EventHandler<WaveInEventArgs>? DataAvailable;
 
-		void Dispose (bool isDisposing)
-		{
-			_client.ProcessFunc -= ProcessAudio;
-			StopRecording ();
-		}
+    public event EventHandler<StoppedEventArgs>? RecordingStopped;
 
-		void ProcessAudio (ProcessBuffer processingChunk)
-		{
-			int bufferCount = processingChunk.AudioIn.Length;
-			if (bufferCount == 0) {
-				return;
-			}
-			int bufferSize = processingChunk.AudioIn [0].BufferSize;
-			int floatsCount = bufferCount * bufferSize;
-			int bytesCount = floatsCount * sizeof(float);
-			float[] interlacedSamples = BufferOperations.InterlaceAudio (processingChunk.AudioIn, bufferSize, bufferCount);
-			byte[] waveInData = new byte[bytesCount];
-			Buffer.BlockCopy (interlacedSamples, 0, waveInData, 0, bytesCount);
-			if (DataAvailable != null) {
-				DataAvailable (this, new WaveInEventArgs (waveInData, bytesCount));
-			}
+    public void StartRecording()
+    {
+        if (!processor.IsActive)
+            processor.Activate();
+        recording = true;
+    }
 
-		}
+    public void StopRecording()
+    {
+        if (!recording)
+            return;
+        recording = false;
+        RecordingStopped?.Invoke(this, new StoppedEventArgs());
+    }
 
-		public void StartRecording ()
-		{
-			if (_isRecording) {
-				return;
-			}
-			if (_client.Start ()) {
-				_isRecording = true;
-			}
-		}
+    // The real-time thread.
+    private void Process(ProcessContext context)
+    {
+        ReadOnlySpan<AudioPort> inputs = context.AudioInputs;
+        int frames = context.Frames, channels = inputs.Length;
+        if (!recording || channels == 0 || DataAvailable is not { } handler)
+            return;
+        int size = frames * channels * sizeof(float);
+        if (arguments == null || arguments.BytesRecorded != size)
+        {
+            // Only when the server's buffer size (or the inputs) changed.
+            bytes = new byte[size];
+            arguments = new WaveInEventArgs(bytes, size);
+        }
+        Span<float> samples = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(bytes.AsSpan(0, size));
+        for (int c = 0; c < channels; c++)
+        {
+            Span<float> from = inputs[c].GetBuffer(context);
+            for (int n = 0, i = c; n < frames; n++, i += channels)
+                samples[i] = from[n];
+        }
+        handler(this, arguments);
+    }
 
-		public void StopRecording ()
-		{
-			if (!_isRecording) {
-				return;
-			}
-			if (_client.Stop ()) {
-				_isRecording = false;
-				if (RecordingStopped != null) {
-					RecordingStopped (this, new StoppedEventArgs ());
-				}
-			}
-		}
-
-		public WaveFormat WaveFormat {
-			get {
-				return WaveFormat.CreateIeeeFloatWaveFormat (_client.SampleRate, _client.AudioInPorts.Count ());
-			}
-			set {
-				throw new NotImplementedException ();
-			}
-		}
-
-		public event EventHandler<WaveInEventArgs> DataAvailable;
-		public event EventHandler<StoppedEventArgs> RecordingStopped;
-	}
+    public void Dispose()
+    {
+        if (disposed)
+            return;
+        disposed = true;
+        processor.Process -= callback;
+        StopRecording();
+    }
 }

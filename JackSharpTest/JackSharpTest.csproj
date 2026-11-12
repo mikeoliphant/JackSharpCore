@@ -2,9 +2,9 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>JackSharpTest</RootNamespace>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <OutputType>library</OutputType>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,13 +12,6 @@
     <PackageReference Include="NUnit" Version="4.0.1" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
     <PackageReference Include="NUnit.Analyzers" Version="3.10.0" />
-    <PackageReference Include="coverlet.collector" Version="6.0.0" />
     <ProjectReference Include="../JackSharp/JackSharp.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Content Include="../example.wav">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>  
   </ItemGroup>
 </Project>

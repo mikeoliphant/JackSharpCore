@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <RootNamespace>Jack.NAudioTest</RootNamespace>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <OutputType>library</OutputType>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <RootNamespace>JackSharpTest.NAudio</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,16 +12,12 @@
     <PackageReference Include="NUnit" Version="4.0.1" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
     <PackageReference Include="NUnit.Analyzers" Version="3.10.0" />
-    <PackageReference Include="coverlet.collector" Version="6.0.0" />
-    <PackageReference Include="NAudio" Version="2.2.1" />
     <ProjectReference Include="../JackSharp/JackSharp.csproj" />
     <ProjectReference Include="../Jack.NAudio/Jack.NAudio.csproj" />
   </ItemGroup>
-  
+
   <ItemGroup>
-    <Content Include="../example.wav">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>  
+    <!-- The same JACK server for these tests: one already running, or a dummy-backend jackd started for them. -->
+    <Compile Include="../JackSharpTest/TestServer.cs" Link="TestServer.cs" />
   </ItemGroup>
 </Project>
-
