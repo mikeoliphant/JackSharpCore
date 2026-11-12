@@ -1,14 +1,25 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<PackageId>JackSharpCore</PackageId>
-		<Version>0.1.6</Version>
+		<Version>1.0.0</Version>
 		<TargetFramework>net8.0</TargetFramework>
 		<RootNamespace>JackSharp</RootNamespace>
+		<AssemblyName>JackSharp</AssemblyName>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<OutputType>library</OutputType>
-		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+		<IsAotCompatible>true</IsAotCompatible>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<NoWarn>$(NoWarn);CS1591</NoWarn>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
-		<Description>.NET Core bindings for Jack Audio</Description>
+		<RepositoryUrl>https://github.com/mikeoliphant/JackSharpCore</RepositoryUrl>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<Description>.NET bindings for the JACK Audio Connection Kit: clients, ports, real-time-safe processing and patching, on Windows, Linux (including PipeWire) and macOS.</Description>
+		<Copyright>Copyright © 2016 Thomas Mayer; © 2024-2026 Mike Oliphant</Copyright>
 	</PropertyGroup>
+	<ItemGroup>
+		<None Include="..\README.md" Pack="true" PackagePath="\" />
+	</ItemGroup>
 </Project>

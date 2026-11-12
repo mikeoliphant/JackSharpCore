@@ -2,13 +2,17 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>Jack.NAudio</RootNamespace>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <OutputType>library</OutputType>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackageId>JackSharpCore.NAudio</PackageId>
+    <Version>1.0.0</Version>
+    <Description>NAudio's IWavePlayer and IWaveIn over a JackSharpCore Processor.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="NAudio" Version="2.2.1" />
+    <!-- Only NAudio's interfaces and formats: NAudio.Core is cross-platform. NAudio 3 targets net9.0, this net8.0. -->
+    <PackageReference Include="NAudio.Core" Version="2.2.1" />
     <ProjectReference Include="../JackSharp/JackSharp.csproj" />
   </ItemGroup>
 </Project>
