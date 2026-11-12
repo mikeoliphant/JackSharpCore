@@ -69,6 +69,9 @@ internal static unsafe partial class Native
     internal static partial int jack_set_latency_callback(IntPtr client, delegate* unmanaged[Cdecl]<int, IntPtr, void> callback, IntPtr arg);
 
     [LibraryImport(JackLibrary.Name)]
+    internal static partial int jack_recompute_total_latencies(IntPtr client);
+
+    [LibraryImport(JackLibrary.Name)]
     internal static partial void jack_set_error_function(delegate* unmanaged[Cdecl]<IntPtr, void> callback);
 
     [LibraryImport(JackLibrary.Name)]

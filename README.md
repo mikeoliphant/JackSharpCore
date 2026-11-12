@@ -43,7 +43,8 @@ output.ConnectTo("system:playback_1");
   size changes, xruns, shutdown) and the graph (clients and ports coming and going, renames, connections). Events
   arrive on JACK's notification thread.
 - **`Processor`** adds ports, registered and unregistered at any time, and the process callback. MIDI is read with
-  `MidiPort.GetEvents` and written with `MidiPort.GetWriter`, in place.
+  `MidiPort.GetEvents` and written with `MidiPort.GetWriter`, in place. `AddedLatency` reports the latency it adds,
+  through JACK's latency callback, so programs downstream can compensate.
 - **`Controller`** is a client without ports, for patchbays and monitors.
 - **`JackLibrary`** finds libjack: an explicit `JackLibrary.Path` or `JACK_LIBRARY`, else the system's (`libjack64.dll`,
   `libjack.so.0`, `libjack.0.dylib`), then the usual install folders (JACK2's, PipeWire's, Homebrew's and MacPorts').
@@ -77,6 +78,11 @@ hardware ones. Without libjack or `jackd` they're skipped.
 - Fixed reading MIDI input.
 - `Controller.Connect` by port name, and a port type `Unknown` for types other than audio and MIDI.
 - Published as the JackSharpCore NuGet package.
+
+**1.1:**
+
+- `Processor.AddedLatency` reports a processor's own latency through JACK's latency callback: its outputs' capture
+  latency is its inputs' plus what it adds, and its inputs' playback latency its outputs' plus what it adds.
 
 **1.0** (breaking):
 
