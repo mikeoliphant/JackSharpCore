@@ -191,11 +191,23 @@ public sealed class Processor : Client
 
     // ---- The process cycle ----
 
+    // Nothing may unwind out of here into libjack: an exception escaping an UnmanagedCallersOnly method ends the
+    // process. Anything the cycle itself throws, outside the callback's own catch, is counted like the callback's.
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     private static int OnProcess(uint frames, IntPtr arg)
     {
         if (FromCallbackArgument<Processor>(arg) is { } processor)
-            processor.RunCycle((int)frames);
+        {
+            try
+            {
+                processor.RunCycle((int)frames);
+            }
+            catch (Exception ex)
+            {
+                processor.lastProcessException = ex;
+                Interlocked.Increment(ref processor.processExceptions);
+            }
+        }
         return 0;
     }
 
@@ -225,10 +237,11 @@ public sealed class Processor : Client
             port.ClearIfUnwritten(frames, cycle);
     }
 
-    private static unsafe void Silence(PortSet set, int frames)
+    // Every audio output this cycle has a buffer for, cleared. (PipeWire's JACK can give a port no buffer; it's skipped.)
+    private static void Silence(PortSet set, int frames)
     {
         foreach (AudioPort port in set.AudioOutputArray)
-            new Span<float>(Native.jack_port_get_buffer(port.Handle, (uint)frames), frames).Clear();
+            port.Buffer(frames).Clear();
     }
 
     /// <summary>The ports a cycle sees: an immutable snapshot, replaced whenever a port is registered or unregistered.</summary>

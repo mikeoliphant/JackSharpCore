@@ -91,13 +91,23 @@ public sealed class AudioPort : Port
 
     /// <summary>
     /// This cycle's samples, in JACK's own buffer: read an input's, write an output's. Valid only during the callback.
-    /// A port unregistered since the cycle began gives an empty span.
+    /// A port unregistered since the cycle began gives an empty span, as does one JACK has no buffer for this cycle
+    /// (PipeWire's JACK can answer with none): check the length before copying a whole cycle in or out.
     /// </summary>
     public unsafe Span<float> GetBuffer(ProcessContext context)
     {
         CheckCycle(context);
+        return Buffer(context.Frames);
+    }
+
+    // The buffer, or an empty span without a port or a buffer: never a span over a null pointer.
+    internal unsafe Span<float> Buffer(int frames)
+    {
         IntPtr h = Handle;
-        return h == IntPtr.Zero ? Span<float>.Empty : new Span<float>(Native.jack_port_get_buffer(h, (uint)context.Frames), context.Frames);
+        if (h == IntPtr.Zero)
+            return Span<float>.Empty;
+        void* buffer = Native.jack_port_get_buffer(h, (uint)frames);
+        return buffer == null ? Span<float>.Empty : new Span<float>(buffer, frames);
     }
 }
 
@@ -117,7 +127,10 @@ public sealed class MidiPort : Port
         if (Direction != Direction.In)
             throw new InvalidOperationException("Only an input's events can be read.");
         IntPtr h = Handle;
-        return h == IntPtr.Zero ? default : new MidiEvents(Native.jack_port_get_buffer(h, (uint)context.Frames));
+        if (h == IntPtr.Zero)
+            return default;
+        void* buffer = Native.jack_port_get_buffer(h, (uint)context.Frames);
+        return buffer == null ? default : new MidiEvents(buffer);
     }
 
     /// <summary>This cycle's writer, on an output: the buffer is cleared the first time it's asked for in a cycle.
@@ -131,6 +144,8 @@ public sealed class MidiPort : Port
         if (h == IntPtr.Zero)
             return default;
         void* buffer = Native.jack_port_get_buffer(h, (uint)context.Frames);
+        if (buffer == null)
+            return default;
         if (writtenCycle != context.Cycle)
         {
             Native.jack_midi_clear_buffer(buffer);
@@ -145,7 +160,9 @@ public sealed class MidiPort : Port
         IntPtr h = Handle;
         if (writtenCycle == cycle || h == IntPtr.Zero)
             return;
-        Native.jack_midi_clear_buffer(Native.jack_port_get_buffer(h, (uint)frames));
+        void* buffer = Native.jack_port_get_buffer(h, (uint)frames);
+        if (buffer != null)
+            Native.jack_midi_clear_buffer(buffer);
         writtenCycle = cycle;
     }
 }

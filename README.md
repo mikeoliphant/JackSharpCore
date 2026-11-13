@@ -79,6 +79,14 @@ hardware ones. Without libjack or `jackd` they're skipped.
 - `Controller.Connect` by port name, and a port type `Unknown` for types other than audio and MIDI.
 - Published as the JackSharpCore NuGet package.
 
+**1.1.1:**
+
+- **A port without a buffer no longer crashes the process.** PipeWire's JACK can answer `jack_port_get_buffer` with
+  no buffer; that became a span over a null pointer, and clearing it in the cycle (after a callback that had thrown)
+  threw out of the `[UnmanagedCallersOnly]` callback, which ends the process. `AudioPort.GetBuffer` now gives an empty
+  span then (check its length before copying a cycle in or out), MIDI ports give no events and no writer, and nothing
+  a cycle throws escapes to JACK: it's counted in `ProcessExceptions` like the callback's own.
+
 **1.1:**
 
 - `Processor.AddedLatency` reports a processor's own latency through JACK's latency callback: its outputs' capture

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<PackageId>JackSharpCore</PackageId>
-		<Version>1.1.0</Version>
+		<Version>1.1.1</Version>
 		<TargetFramework>net8.0</TargetFramework>
 		<RootNamespace>JackSharp</RootNamespace>
 		<AssemblyName>JackSharp</AssemblyName>
